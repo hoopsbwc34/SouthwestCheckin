@@ -16,6 +16,11 @@ CHECKIN_EARLY_SECONDS = 5
 def schedule_checkin(flight_time, reservation):
     checkin_time = flight_time - timedelta(days=1)
     current_time = datetime.utcnow().replace(tzinfo=utc)
+
+    # open database to store boarding number
+    db = flights_db.connect()
+    cursor = db.cursor(dictionary=True)
+
     # check to see if we need to sleep until 24 hours before flight
     if checkin_time > current_time:
         # calculate duration to sleep
@@ -29,6 +34,13 @@ def schedule_checkin(flight_time, reservation):
     for flight in data['flights']:
         for doc in flight['passengers']:
             print("{} got {}{}!".format(doc['name'], doc['boardingGroup'], doc['boardingPosition']))
+            boarding_num = "%s%s" % (doc['boardingGroup'],doc['boardingPosition'])
+
+            #checked in so don't try next time
+            query = "UPDATE flightinfo SET boardingnum=%s WHERE conf=%s"
+            cursor.execute(query,(boarding_num, doc['confirmationNumber']))
+            db.commit()
+    db.close()
 
 def set_takeoff(reservation_number, first_name, last_name, notify=[]):
     r = Reservation(reservation_number, first_name, last_name, notify)
@@ -93,6 +105,7 @@ if __name__ == '__main__':
         print("Getting Takeoff time for {}".format(record['conf']))
         takeoff_time = set_takeoff(record['conf'], record['first'], record['last'])
         confnum=record['conf']
+
         query = "UPDATE flightinfo SET takeoff=%s WHERE conf=%s"
         print(query,takeoff_time,confnum)
         cursor.execute(query,(takeoff_time,confnum))
@@ -124,12 +137,6 @@ if __name__ == '__main__':
             notifications.append({'mediaType': 'SMS', 'phoneNumber': mobile})
 
         threads = auto_checkin(threads,reservation_number, first_name, last_name, notifications)
-
-        #checked in so don't try next time
-        query = "UPDATE flightinfo SET boardingnum=%s WHERE conf=%s"
-        cursor.execute(query,("yes",reservation_number))
-        db.commit()
-        
     db.close()
     try:
         # cleanup threads while handling Ctrl+C
