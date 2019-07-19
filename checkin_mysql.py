@@ -46,6 +46,11 @@ def set_takeoff(reservation_number, first_name, last_name, notify=[]):
     r = Reservation(reservation_number, first_name, last_name, notify)
     body = r.lookup_existing_reservation()
 
+    # connect to db to store date
+    db = flights_db.connect()
+    cursor = db.cursor(dictionary=True)
+    i=0
+
     # find all eligible legs for checkin
     for leg in body['bounds']:
         # calculate departure for this leg
@@ -56,7 +61,18 @@ def set_takeoff(reservation_number, first_name, last_name, notify=[]):
             flightnum = item['number']
         airport_tz = openflights.timezone_for_airport(leg['departureAirport']['code'])
         date = airport_tz.localize(datetime.strptime(takeoff, '%Y-%m-%d %H:%M'))
-    return (date, flightnum)
+        if i is 0:
+            query = "UPDATE flightinfo SET takeoff=%s, flightnum=%s WHERE conf=%s"
+            cursor.execute(query,(takeoff,flightnum,reservation_number))
+            db.commit()
+        else:
+            query = "INSERT INTO flightinfo (takeoff, flightnum, conf, first, last) VALUES (%s, %s, %s, %s, %s)"
+            cursor.execute(query,(takeoff,flightnum,reservation_number, first_name, last_name))
+            db.commit()
+        i+=1 
+
+    db.close()
+    return ()
 
 def auto_checkin(threads, reservation_number, first_name, last_name, notify=[]):
     r = Reservation(reservation_number, first_name, last_name, notify)
@@ -100,19 +116,9 @@ if __name__ == '__main__':
 
     records = cursor.fetchall()
 
-    flight_details = []
-
     for record in records:
         print("Getting Takeoff time for {}".format(record['conf']))
-        flight_details = set_takeoff(record['conf'], record['first'], record['last'])
-        confnum=record['conf']
-
-        takeoff_time = flight_details[0]
-        flightnum = flight_details[1]
-    
-        query = "UPDATE flightinfo SET takeoff=%s, flightnum=%s WHERE conf=%s"
-        cursor.execute(query,(takeoff_time,flightnum,confnum))
-        db.commit()
+        set_takeoff(record['conf'], record['first'], record['last'])
 
     # get those that are less than two hours from checkin (run cron every two hours)
     query = "SELECT * FROM flightinfo WHERE ((takeoff - INTERVAL 26 HOUR) < NOW()) AND boardingnum IS NULL"
