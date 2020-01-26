@@ -127,6 +127,10 @@ if __name__ == '__main__':
         print(("Getting Takeoff time for {}".format(record['conf'])))
         set_takeoff(record['conf'], record['first'], record['last'])
 
+    # closing and reopening so that I get the records that were just inserted in case it's under two hours to checkin
+    db.close()
+    db = flights_db.connect()
+    cursor = db.cursor(dictionary=True)
     # get those that are less than two hours from checkin (run cron every two hours)
     query = "SELECT * FROM flightinfo WHERE ((takeoff - INTERVAL 26 HOUR) < NOW()) AND boardingnum IS NULL"
 
