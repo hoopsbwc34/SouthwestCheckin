@@ -117,8 +117,7 @@ if __name__ == '__main__':
     cursor = db.cursor(dictionary=True)
 
     # capture takeoff times if not set in mysql
-    query = "SELECT * FROM flightinfo WHERE takeoff IS NULL and conf IS NOT NULL"
-
+    query = "SELECT * FROM flightinfo WHERE (takeoff IS NULL and conf IS NOT NULL) OR (((takeoff - INTERVAL 26 HOUR) < NOW()) AND boardingnum IS NULL)"
     cursor.execute(query)
 
     records = cursor.fetchall()
