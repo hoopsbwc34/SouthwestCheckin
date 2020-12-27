@@ -42,8 +42,8 @@ def schedule_checkin(flight_time, reservation, prikey):
             db.commit()
             db.close()
 
-def set_takeoff(reservation_number, first_name, last_name, notify=[]):
-    r = Reservation(reservation_number, first_name, last_name, notify)
+def set_takeoff(reservation_number, first_name, last_name, verbose=False):
+    r = Reservation(reservation_number, first_name, last_name, verbose)
     body = r.lookup_existing_reservation()
 
     # connect to db to store date
@@ -66,7 +66,7 @@ def set_takeoff(reservation_number, first_name, last_name, notify=[]):
         temp = airport_tz.localize(datetime.strptime(takeoff, '%Y-%m-%d %H:%M'))
         date = temp.astimezone(cpu_tz)
 
-        if i is 0:
+        if i == 0:
             query = "UPDATE flightinfo SET takeoff=%s, flightnum=%s WHERE conf=%s"
             cursor.execute(query,(date,flightnum,reservation_number))
             db.commit()
@@ -79,8 +79,8 @@ def set_takeoff(reservation_number, first_name, last_name, notify=[]):
     db.close()
     return ()
 
-def auto_checkin(threads, reservation_number, first_name, last_name, prikey, notify=[]):
-    r = Reservation(reservation_number, first_name, last_name, notify)
+def auto_checkin(threads, reservation_number, first_name, last_name, prikey, verbose=False):
+    r = Reservation(reservation_number, first_name, last_name, verbose)
     body = r.lookup_existing_reservation()
 
     # Get our local current time
@@ -89,14 +89,11 @@ def auto_checkin(threads, reservation_number, first_name, last_name, prikey, not
 
     # find all eligible legs for checkin
     for leg in body['bounds']:
-        print("auto check in leg")
         # calculate departure for this leg
         airport = "{}, {}".format(leg['departureAirport']['name'], leg['departureAirport']['state'])
         takeoff = "{} {}".format(leg['departureDate'], leg['departureTime'])
         airport_tz = openflights.timezone_for_airport(leg['departureAirport']['code'])
         date = airport_tz.localize(datetime.strptime(takeoff, '%Y-%m-%d %H:%M'))
-        print(date)
-        print(now)
         if date > now:
             # found a flight for checkin!
             print(("Flight information found, departing {} at {}".format(airport, date.strftime('%b %d %I:%M%p'))))
@@ -115,6 +112,7 @@ if __name__ == '__main__':
     print((str(datetime.now())))
     db = flights_db.connect()
     cursor = db.cursor(dictionary=True)
+    verbose = False
 
     # capture takeoff times if not set in mysql
     query = "SELECT * FROM flightinfo WHERE (takeoff IS NULL and conf IS NOT NULL) OR (((takeoff - INTERVAL 26 HOUR) < NOW()) AND boardingnum IS NULL)"
@@ -124,7 +122,7 @@ if __name__ == '__main__':
 
     for record in records:
         print(("Getting Takeoff time for {}".format(record['conf'])))
-        set_takeoff(record['conf'], record['first'], record['last'])
+        set_takeoff(record['conf'], record['first'], record['last'],verbose)
 
     # closing and reopening so that I get the records that were just inserted in case it's under two hours to checkin
     db.close()
@@ -144,20 +142,9 @@ if __name__ == '__main__':
         reservation_number = record['conf']
         first_name = record['first']
         last_name = record['last']
-        email = record['email']
-        mobile = record['mobile']
         prikey = record['prikey']
 
-        # build out notifications
-        notifications = []
-        if email is not None:
-            print("adding email")
-            notifications.append({'mediaType': 'EMAIL', 'emailAddress': email})
-        if mobile is not None:
-            print("adding mobile")
-            notifications.append({'mediaType': 'SMS', 'phoneNumber': mobile})
-
-        threads = auto_checkin(threads,reservation_number, first_name, last_name, prikey, notifications)
+        threads = auto_checkin(threads,reservation_number, first_name, last_name, prikey, verbose)
     try:
         # cleanup threads while handling Ctrl+C
         while True:
@@ -165,7 +152,7 @@ if __name__ == '__main__':
                 break
             for t in threads:
                 t.join(5)
-                if not t.isAlive():
+                if not t.is_alive():
                     threads.remove(t)
                     break
     except KeyboardInterrupt:
